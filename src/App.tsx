@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, MessageCircle, Settings as Lungs, Image, X } from 'lucide-react';
+import { Heart, MessageCircle, Settings as Lungs, Image, X, Mic } from 'lucide-react';
 
 function App() {
   const [mode, setMode] = useState<'subtitle' | 'breathing' | 'memories'>('subtitle');
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [voiceError, setVoiceError] = useState('');
+  const [speechRecognition, setSpeechRecognition] = useState<any>(null);
   const [inputText, setInputText] = useState('');
   const [transformedText, setTransformedText] = useState('');
   const [breathingPhase, setBreathingPhase] = useState<'inhale' | 'hold' | 'exhale'>('inhale');
@@ -16,6 +21,130 @@ function App() {
   ]);
   const [currentMemory, setCurrentMemory] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Speech Recognition Setup
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US'; // Or 'zh-CN' for Chinese
+
+      recognition.onresult = (event) => {
+        let currentInterimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = 0; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
+          } else {
+            currentInterimTranscript += result[0].transcript;
+          }
+        }
+
+        setInterimTranscript(currentInterimTranscript);
+
+        // Process the final transcript
+        if (finalTranscript) {
+          setInterimTranscript(''); // Clear interim when final is processed
+          const command = finalTranscript.toLowerCase().trim();
+          let commandProcessed = false;
+          const textInputPrefixes = ["set input to ", "set text to ", "dictate ", "say "];
+          let matchedPrefix = null;
+
+          for (const prefix of textInputPrefixes) {
+            if (command.startsWith(prefix)) {
+              matchedPrefix = prefix;
+              break;
+            }
+          }
+
+          if (matchedPrefix) {
+            const content = finalTranscript.substring(matchedPrefix.length).trim();
+            setInputText(content);
+            setTranscript(content); // Or finalTranscript for full command log
+            console.log(`Voice command: Set input to "${content}"`);
+            commandProcessed = true;
+          } else {
+            // Voice commands for mode switching
+            // Note: If recognition.lang is changed, these commands need to be localized.
+            if (["go to subtitle mode", "switch to subtitle", "open subtitle"].includes(command)) {
+              setMode('subtitle');
+              setInputText('');
+              setTranscript(''); // Clear transcript or set to command
+              console.log("Voice command: Switch to subtitle mode");
+              commandProcessed = true;
+            } else if (["go to breathing mode", "switch to breathing", "start breathing exercise", "open breathing"].includes(command)) {
+              setMode('breathing');
+              setInputText('');
+              setTranscript(''); // Clear transcript or set to command
+              console.log("Voice command: Switch to breathing mode");
+              commandProcessed = true;
+            } else if (["go to memories mode", "switch to memories", "show memories", "open memories"].includes(command)) {
+              setMode('memories');
+              setInputText('');
+              setTranscript(''); // Clear transcript or set to command
+              console.log("Voice command: Switch to memories mode");
+              commandProcessed = true;
+            } else if (["enter fullscreen", "go fullscreen", "exit fullscreen", "leave fullscreen", "toggle fullscreen"].includes(command)) {
+              toggleFullscreen();
+              setInputText('');
+              setTranscript(command); // Or set to '' if preferred
+              console.log("Voice command: Toggle fullscreen");
+              commandProcessed = true;
+            }
+          }
+
+          if (!commandProcessed) {
+            // If no command was processed, append to inputText for dictation
+            setInputText(prevInput => prevInput + (prevInput.length > 0 && finalTranscript.length > 0 ? ' ' : '') + finalTranscript);
+            setTranscript(finalTranscript); // Also update transcript state for consistency if needed elsewhere
+          } else {
+            // If a command was processed, we've already cleared inputText and transcript
+            // but we might want to set the transcript state to the command itself for record, or keep it empty
+            setTranscript(finalTranscript); // Or setTranscript('') if preferred after a command
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        setVoiceError(`Speech recognition error: ${event.error}`);
+        setIsListening(false); // Ensure listening stops on error
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      setSpeechRecognition(recognition);
+    } else {
+      setVoiceError('Voice recognition not supported in this browser.');
+    }
+  }, []);
+
+  const startListening = () => {
+    if (speechRecognition && !isListening) {
+      setTranscript(''); // Clear previous final transcript
+      setInterimTranscript(''); // Clear previous interim transcript
+      setVoiceError('');   // Clear previous error
+      try {
+        speechRecognition.start();
+        setIsListening(true);
+      } catch (error) {
+        setVoiceError(`Error starting recognition: ${error}`);
+        setIsListening(false);
+      }
+    }
+  };
+
+  const stopListening = () => {
+    if (speechRecognition && isListening) {
+      speechRecognition.stop();
+      setIsListening(false); // This will also be set by onend, but good to be explicit
+    }
+  };
 
   // Transform aggressive statements to "I feel" statements
   useEffect(() => {
@@ -129,22 +258,47 @@ function App() {
           >
             <Image size={24} />
           </button>
+          {/* Microphone Button */}
+          {speechRecognition && (
+            <button
+              onClick={isListening ? stopListening : startListening}
+              className={`p-3 rounded-full ${isListening ? 'bg-red-500 animate-pulse' : 'bg-green-500'} hover:bg-opacity-80 transition-colors`}
+              title={isListening ? 'Stop Listening' : 'Start Listening'}
+            >
+              <Mic size={24} />
+            </button>
+          )}
         </div>
+
+        {/* Voice Error Display */}
+        {voiceError && (
+          <p className="text-red-400 bg-red-900/50 p-2 rounded-md mb-4 text-sm">
+            Error: {voiceError}
+          </p>
+        )}
 
         {/* Content based on mode */}
         {mode === 'subtitle' && (
           <div className="w-full max-w-2xl">
-            <div className="mb-4">
+            <div className="mb-4 relative">
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="输入对话内容..."
-                className="w-full p-4 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                placeholder="输入对话内容或开始语音输入..."
+                className="w-full p-4 pr-12 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 focus:outline-none focus:ring-2 focus:ring-pink-500"
               />
             </div>
-            <div className="p-6 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 min-h-32 flex items-center justify-center">
+            <div className="p-6 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 min-h-32 flex flex-col items-center justify-center">
               <p className="text-xl text-center">{transformedText || '转换后的文字将显示在这里...'}</p>
+              {isListening && (
+                <>
+                  <p className="text-sm text-center opacity-70 mt-2">正在倾听...</p>
+                  {interimTranscript && (
+                    <p className="text-sm text-gray-400 italic text-center mt-1">{interimTranscript}</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}

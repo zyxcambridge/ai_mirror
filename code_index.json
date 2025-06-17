@@ -1,0 +1,17 @@
+{
+  "src/App.tsx": {
+    "functions": ["App", "transformText", "toggleFullscreen"],
+    "classes": [],
+    "variables": []
+  },
+  "src/main.tsx": {
+    "functions": [],
+    "classes": [],
+    "variables": []
+  },
+  "src/vite-env.d.ts": {
+    "functions": [],
+    "classes": [],
+    "variables": []
+  }
+}
